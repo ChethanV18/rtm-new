@@ -1,6 +1,6 @@
 
 const express = require("express");
-const mongoose = require("mongoose");
+const { Pool } = require("pg");
 const cors = require("cors");
 const requirementRoutes = require("./routes/requirements");
 
@@ -9,13 +9,40 @@ app.use(cors());
 app.use(express.json());
 
 const PORT = process.env.PORT || 5000;
-const MONGO_URI = process.env.MONGO_URI || "mongodb://127.0.0.1:27017/rtm_db";
+const DATABASE_URL = process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/rtm_db";
 
-mongoose.connect(MONGO_URI, {
-})
-.then(() => console.log("MongoDB Connected"))
-.catch(err => console.log(err));
+const pool = new Pool({
+    connectionString: DATABASE_URL,
+    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
+});
 
-app.use("/requirements", requirementRoutes);
+pool.connect()
+    .then(() => {
+        console.log("PostgreSQL Connected");
+
+        // Create table if it doesn't exist
+        return pool.query(`
+      CREATE TABLE IF NOT EXISTS requirements (
+        id SERIAL PRIMARY KEY,
+        requirement_id VARCHAR(255) UNIQUE,
+        description TEXT,
+        development VARCHAR(50) DEFAULT 'Pending',
+        testing VARCHAR(50) DEFAULT 'Pending',
+        reporting VARCHAR(50) DEFAULT 'Pending',
+        deployment VARCHAR(50) DEFAULT 'Pending',
+        usage VARCHAR(50) DEFAULT 'Pending',
+        status VARCHAR(50) DEFAULT 'Not Started',
+        remarks TEXT DEFAULT ''
+      )
+    `);
+    })
+    .then(() => console.log("Requirements table ready"))
+    .catch(err => console.error("Database connection error", err));
+
+// Pass the pool to the routes
+app.use("/requirements", (req, res, next) => {
+    req.pool = pool;
+    next();
+}, requirementRoutes);
 
 app.listen(PORT, () => console.log(`Backend running on port ${PORT}`));

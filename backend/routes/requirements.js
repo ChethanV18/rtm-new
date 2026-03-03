@@ -3,34 +3,134 @@ const express = require("express");
 const router = express.Router();
 const multer = require("multer");
 const xlsx = require("xlsx");
-const Requirement = require("../models/Requirement");
 
 const upload = multer({ storage: multer.memoryStorage() });
 
 router.get("/", async (req, res) => {
-  const data = await Requirement.find();
-  res.json(data);
+  try {
+    const result = await req.pool.query("SELECT * FROM requirements ORDER BY id ASC");
+    // Format keys to match frontend expectation (camelCase)
+    const formatted = result.rows.map(row => ({
+      _id: row.id,
+      requirementId: row.requirement_id,
+      description: row.description,
+      development: row.development,
+      testing: row.testing,
+      reporting: row.reporting,
+      deployment: row.deployment,
+      usage: row.usage,
+      status: row.status,
+      remarks: row.remarks
+    }));
+    res.json(formatted);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 router.post("/", async (req, res) => {
-  const newReq = new Requirement(req.body);
-  await newReq.save();
-  res.json(newReq);
+  try {
+    const { requirementId, description, development, testing, reporting, deployment, usage, status, remarks } = req.body;
+
+    const result = await req.pool.query(
+      `INSERT INTO requirements (requirement_id, description, development, testing, reporting, deployment, usage, status, remarks) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+      [requirementId, description, development || 'Pending', testing || 'Pending', reporting || 'Pending', deployment || 'Pending', usage || 'Pending', status || 'Not Started', remarks || '']
+    );
+
+    const row = result.rows[0];
+    res.json({
+      _id: row.id,
+      requirementId: row.requirement_id,
+      description: row.description,
+      development: row.development,
+      testing: row.testing,
+      reporting: row.reporting,
+      deployment: row.deployment,
+      usage: row.usage,
+      status: row.status,
+      remarks: row.remarks
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 router.put("/:id", async (req, res) => {
-  const updated = await Requirement.findByIdAndUpdate(req.params.id, req.body, { new: true });
-  res.json(updated);
+  try {
+    const id = req.params.id;
+    const bodyKeys = Object.keys(req.body);
+
+    if (bodyKeys.length === 0) {
+      return res.status(400).json({ message: "No data to update" });
+    }
+
+    // Convert camelCase to snake_case for the query
+    const dbKeyMap = {
+      requirementId: 'requirement_id',
+      description: 'description',
+      development: 'development',
+      testing: 'testing',
+      reporting: 'reporting',
+      deployment: 'deployment',
+      usage: 'usage',
+      status: 'status',
+      remarks: 'remarks'
+    };
+
+    let setClauses = [];
+    let values = [];
+    let paramIndex = 1;
+
+    bodyKeys.forEach(key => {
+      if (dbKeyMap[key]) {
+        setClauses.push(`${dbKeyMap[key]} = $${paramIndex}`);
+        values.push(req.body[key]);
+        paramIndex++;
+      }
+    });
+
+    values.push(id);
+
+    const updateQuery = `
+      UPDATE requirements 
+      SET ${setClauses.join(", ")} 
+      WHERE id = $${paramIndex} 
+      RETURNING *
+    `;
+
+    const result = await req.pool.query(updateQuery, values);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Requirement not found" });
+    }
+
+    const row = result.rows[0];
+    res.json({
+      _id: row.id,
+      requirementId: row.requirement_id,
+      description: row.description,
+      development: row.development,
+      testing: row.testing,
+      reporting: row.reporting,
+      deployment: row.deployment,
+      usage: row.usage,
+      status: row.status,
+      remarks: row.remarks
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 router.get("/export", async (req, res) => {
   try {
-    const data = await Requirement.find().lean();
-    if (!data.length) return res.status(404).json({ message: "No data found" });
+    const result = await req.pool.query("SELECT * FROM requirements ORDER BY id ASC");
+    if (!result.rows.length) return res.status(404).json({ message: "No data found" });
 
     // Prepare data for Excel
-    const formattedData = data.map(item => ({
-      "Requirement Id": item.requirementId,
+    const formattedData = result.rows.map(item => ({
+      "Requirement Id": item.requirement_id,
       "Requirement Description": item.description,
       "Development": item.development,
       "Testing": item.testing,
@@ -67,28 +167,46 @@ router.post("/import", upload.single("file"), async (req, res) => {
     const worksheet = workbook.Sheets[sheetName];
     const jsonData = xlsx.utils.sheet_to_json(worksheet);
 
-    const formattedData = jsonData.map(item => ({
-      requirementId: item["Requirement Id"] || "REQ-" + Date.now() + Math.floor(Math.random() * 1000),
-      description: item["Requirement Description"] || "",
-      development: item["Development"] || "Pending",
-      testing: item["Testing"] || "Pending",
-      reporting: item["Reporting"] || "Pending",
-      deployment: item["Deployment"] || "Pending",
-      usage: item["Usage"] || "Pending",
-      status: item["Status"] || "Not Started",
-      remarks: item["Remarks"] || ""
-    }));
+    let importCount = 0;
 
-    await Requirement.insertMany(formattedData);
-    res.json({ message: "Import successful", count: formattedData.length });
+    for (const item of jsonData) {
+      const requirementId = item["Requirement Id"] || "REQ-" + Date.now() + Math.floor(Math.random() * 1000);
+      const description = item["Requirement Description"] || "";
+      const development = item["Development"] || "Pending";
+      const testing = item["Testing"] || "Pending";
+      const reporting = item["Reporting"] || "Pending";
+      const deployment = item["Deployment"] || "Pending";
+      const usage = item["Usage"] || "Pending";
+      const status = item["Status"] || "Not Started";
+      const remarks = item["Remarks"] || "";
+
+      // Try to insert, ignore if duplicates (or implement update logic)
+      try {
+        await req.pool.query(
+          `INSERT INTO requirements (requirement_id, description, development, testing, reporting, deployment, usage, status, remarks) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+           ON CONFLICT (requirement_id) DO NOTHING`,
+          [requirementId, description, development, testing, reporting, deployment, usage, status, remarks]
+        );
+        importCount++;
+      } catch (e) {
+        console.error("Error inserting row:", e);
+      }
+    }
+
+    res.json({ message: "Import successful", count: importCount });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 router.delete("/:id", async (req, res) => {
-  await Requirement.findByIdAndDelete(req.params.id);
-  res.json({ message: "Deleted" });
+  try {
+    await req.pool.query("DELETE FROM requirements WHERE id = $1", [req.params.id]);
+    res.json({ message: "Deleted" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
