@@ -9,7 +9,7 @@ function App() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const res = await axios.get("http://localhost:5000/requirements");
+      const res = await axios.get("https://rtm-new.onrender.com/requirements");
       setRequirements(res.data);
     } catch (error) {
       console.error("Error fetching data:", error);
@@ -35,12 +35,12 @@ function App() {
       remarks: ""
     };
 
-    await axios.post("http://localhost:5000/requirements", newReq);
+    await axios.post("https://rtm-new.onrender.com/requirements", newReq);
     fetchData();
   };
 
   const handleExport = async () => {
-    window.location.href = "http://localhost:5000/requirements/export";
+    window.location.href = "https://rtm-new.onrender.com/requirements/export";
   };
 
   const handleImport = async (e) => {
@@ -51,7 +51,7 @@ function App() {
     formData.append("file", file);
 
     try {
-      await axios.post("http://localhost:5000/requirements/import", formData, {
+      await axios.post("https://rtm-new.onrender.com/requirements/import", formData, {
         headers: { "Content-Type": "multipart/form-data" }
       });
       fetchData();
