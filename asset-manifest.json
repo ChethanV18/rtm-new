@@ -1,0 +1,13 @@
+{
+  "files": {
+    "main.css": "/rtm-new/static/css/main.8733a32d.css",
+    "main.js": "/rtm-new/static/js/main.cdd45b18.js",
+    "index.html": "/rtm-new/index.html",
+    "main.8733a32d.css.map": "/rtm-new/static/css/main.8733a32d.css.map",
+    "main.cdd45b18.js.map": "/rtm-new/static/js/main.cdd45b18.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.8733a32d.css",
+    "static/js/main.cdd45b18.js"
+  ]
+}
